@@ -4,6 +4,7 @@ from Bio import motifs
 import click
 import numpy as np
 import os
+import pickle
 
 CONTEXT_SETTINGS = {
     "help_option_names": ["-h", "--help"],
@@ -20,11 +21,6 @@ CONTEXT_SETTINGS = {
     type=int,
     default=19,
     show_default=True,
-)
-@click.option(
-    "-r", "--rev-complement",
-    help="Reverse complement filters.",
-    is_flag=1,
 )
 
 def main(**params):
@@ -58,27 +54,29 @@ def main(**params):
             profiles.setdefault(m.matrix_id, (m, information_content))
 
     # For each binding mode...
-    arr = []
+    filters = {}
     for bm in sorted(binding_modes):
         binding_modes[bm].sort(key=lambda x: profiles[x][-1], reverse=True)
-        pwm = [list(i) for i in profiles[binding_modes[bm][0]][0].pwm.values()]
+        m = profiles[binding_modes[bm][0]][0]
+        filters.setdefault(m.matrix_id, [m.name, bm])
+        pwm = [list(i) for i in m.pwm.values()]
         pwm = _resize_PWM(list(map(list, zip(*pwm))), params["filter_size"])
-        arr.append(pwm)
-        if params["rev_complement"]:
-            arr.append(np.flip(pwm))
+        filters[m.matrix_id].append(pwm)
+        filters[m.matrix_id].append(np.flip(pwm))
 
     # Save
-    np.save(params["out_file"], arr, allow_pickle=True, fix_imports=True)
+    with open(params["out_file"], 'wb') as handle:
+        pickle.dump(filters, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-def _resize_PWM(pwm, size=19):
+def _resize_PWM(pwm, filter_size=19):
 
     # Initialize
     lpop = 0
     rpop = 0
 
-    pwm = [[0., 0., 0., 0.]]*size + pwm + [[0., 0., 0., 0.]]*size
+    pwm = [[0., 0., 0., 0.]]*filter_size + pwm + [[0., 0., 0., 0.]]*filter_size
 
-    while len(pwm) > size:
+    while len(pwm) > filter_size:
         if max(pwm[0]) < max(pwm[-1]):
             pwm.pop(0)
             lpop += 1
