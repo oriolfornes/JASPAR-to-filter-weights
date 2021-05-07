@@ -59,11 +59,11 @@ def main(**params):
         binding_modes[bm].sort(key=lambda x: profiles[x][-1], reverse=True)
         m = profiles[binding_modes[bm][0]][0]
         tfs = m.name.upper().split("(")[0].split("::")
-        filters.setdefault(m.matrix_id, [tfs, bm])
+        filters.setdefault(bm, [m.matrix_id, tfs])
         pwm = [list(i) for i in m.pwm.values()]
         pwm = _PWM_to_filter_weights(list(map(list, zip(*pwm))), params["filter_size"])
-        filters[m.matrix_id].append(pwm)
-        filters[m.matrix_id].append(np.flip(pwm))
+        filters[bm].append(pwm)
+        filters[bm].append(np.flip(pwm))
 
     # Save
     with open(params["out_file"], "wb") as handle:
