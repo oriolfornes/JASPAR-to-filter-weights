@@ -99,6 +99,9 @@ def main(**params):
         ic = sum([m.pssm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
         info_contents.setdefault(name, ic)
 
+    print(info_contents["MA0139.1;fwd;CTCF"])
+    exit(0)
+
     with open(meme_file, "w") as handle:
         handle.write(lines)
 
