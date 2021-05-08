@@ -8,9 +8,6 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
-import random
-random.seed(0)
-import re
 from sklearn.cluster import KMeans
 import subprocess as sp
 
@@ -55,7 +52,9 @@ def main(**params):
             info_contents.setdefault(m.matrix_id, ic)
 
     # Load
+    info_contents = {}
     matrix_id2filter = {}
+    ixs = {"A":0, "C":1, "G":2, "T":3}
     with open(params["binding_modes_pickle"], "rb") as handle:
         filters = pickle.load(handle)
 
@@ -73,26 +72,32 @@ def main(**params):
         handle = io.StringIO(m)
         m = motifs.read(handle, "pfm-four-columns")
         name = "%s;fwd;%s" % (filters[bm][0][0], "::".join(filters[bm][0][1]))
-        matrix_id2filter.setdefault(name, filters[bm][0][2])
-        consensus = m.consensus
-        w = len(consensus)
-        lines += "MOTIF %s %s\n" % (name, consensus)
+        consensus_seq = m.consensus
+        w = len(consensus_seq)
+        lines += "MOTIF %s %s\n" % (name, consensus_seq)
         lines += "letter-probability matrix: alength= 4 w= %s nsites= 20 E= 0\n" % w
         for row in np.transpose(np.array(list(m.pwm.values()))):
             lines += " ".join([str(round(r, 8)).rjust(11) for r in row]) + "\n"
         lines += "\n"
+        matrix_id2filter.setdefault(name, filters[bm][0][2])
+        m.pseudocounts = motifs.jaspar.calculate_pseudocounts(m)
+        ic = sum([m.pssm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
+        info_contents.setdefault(name, ic)
         m = "\n".join(["\t".join(list(map(str, i+.25))) for i in filters[bm][0][3]])
         handle = io.StringIO(m)
         m = motifs.read(handle, "pfm-four-columns")
         name = "%s;rev;%s" % (filters[bm][0][0], "::".join(filters[bm][0][1]))
-        matrix_id2filter.setdefault(name, filters[bm][0][3])
-        consensus = m.pssm.consensus
-        w = len(consensus)
-        lines += "MOTIF %s %s\n" % (name, consensus)
+        consensus_seq = m.pssm.consensus
+        w = len(consensus_seq)
+        lines += "MOTIF %s %s\n" % (name, consensus_seq)
         lines += "letter-probability matrix: alength= 4 w= %s nsites= 20 E= 0\n" % w
         for row in np.transpose(np.array(list(m.pwm.values()))):
             lines += " ".join([str(round(r, 8)).rjust(11) for r in row]) + "\n"
         lines += "\n"
+        matrix_id2filter.setdefault(name, filters[bm][0][3])
+        m.pseudocounts = motifs.jaspar.calculate_pseudocounts(m)
+        ic = sum([m.pssm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
+        info_contents.setdefault(name, ic)
 
     with open(meme_file, "w") as handle:
         handle.write(lines)
@@ -128,8 +133,8 @@ def main(**params):
     # Subsampled filters
     sub_filters = {}
     for c in sorted(clusters):
-
-        matrix_id = random.choice(clusters[c])
+        clusters[c].sort(key=lambda x: info_contents[x], reverse=True)
+        matrix_id = clusters[c][0]
         sub_filters.setdefault(matrix_id, matrix_id2filter[matrix_id])
 
     # Save
