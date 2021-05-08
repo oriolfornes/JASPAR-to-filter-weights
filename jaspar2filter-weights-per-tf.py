@@ -29,6 +29,16 @@ def main(**params):
     base_dir = os.path.dirname(os.path.realpath(__file__))
     data_dir = os.path.join(base_dir, "data")
 
+    # Parse binding modes
+    binding_modes = {}
+    binding_modes_file = os.path.join(data_dir, "leaf_to_cluster.tab")
+    with open(binding_modes_file) as handle:
+        for line in handle:
+            matrix_id, cluster = line.strip("\n").split("\t")
+            matrix_id = matrix_id.split("_")
+            matrix_id = "%s.%s" % (matrix_id[-2], matrix_id[-1])
+            binding_modes.setdefault(matrix_id, int(cluster))
+
     # Parse profiles
     filters = {}
     jaspar_file = os.path.join(data_dir,
@@ -41,7 +51,9 @@ def main(**params):
             pwm = _PWM_to_filter_weights(list(map(list, zip(*pwm))), params["filter_size"])
             for tf in tfs:
                 filters.setdefault(tf, [])
-                filters[tf].append([m.matrix_id, pwm, np.flip(pwm)])
+                filters[tf].append(
+                    [m.matrix_id, binding_modes[m.matrix_id], pwm, np.flip(pwm)]
+                )
 
     # Save
     with open(params["out_file"], "wb") as handle:

@@ -29,6 +29,20 @@ def main(**params):
     base_dir = os.path.dirname(os.path.realpath(__file__))
     data_dir = os.path.join(base_dir, "data")
 
+    # Parse profiles
+    profiles = {}
+    info_contents = {}
+    ixs = {"A":0, "C":1, "G":2, "T":3}
+    jaspar_file = os.path.join(data_dir,
+        "JASPAR2020_CORE_vertebrates_non-redundant_pfms_jaspar.txt")
+    with open(jaspar_file) as handle:
+        for m in motifs.parse(handle, "jaspar"):
+            m.pseudocounts = motifs.jaspar.calculate_pseudocounts(m)
+            consensus_seq = str(m.consensus)
+            ic = sum([m.pssm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
+            profiles.setdefault(m.matrix_id, m)
+            info_contents.setdefault(m.matrix_id, ic)
+
     # Parse binding modes
     binding_modes = {}
     binding_modes_file = os.path.join(data_dir, "leaf_to_cluster.tab")
@@ -37,33 +51,23 @@ def main(**params):
             matrix_id, cluster = line.strip("\n").split("\t")
             matrix_id = matrix_id.split("_")
             binding_modes.setdefault(int(cluster), [])
-            binding_modes[int(cluster)].append("%s.%s" % \
-                (matrix_id[-2], matrix_id[-1]))
-
-    # Parse profiles
-    profiles = {}
-    ixs = {"A":0, "C":1, "G":2, "T":3}
-    jaspar_file = os.path.join(data_dir,
-        "JASPAR2020_CORE_vertebrates_redundant_pfms_jaspar.txt")
-    with open(jaspar_file) as handle:
-        for m in motifs.parse(handle, "jaspar"):
-            m.pseudocounts = motifs.jaspar.calculate_pseudocounts(m)
-            consensus_seq = str(m.consensus)
-            information_content = sum([m.pssm[ixs[consensus_seq[i]]][i] \
-                for i in range(len(consensus_seq))])
-            profiles.setdefault(m.matrix_id, (m, information_content))
+            matrix_id = "%s.%s" % (matrix_id[-2], matrix_id[-1])
+            if matrix_id in profiles:
+                binding_modes[int(cluster)].append(matrix_id)
 
     # For each binding mode...
     filters = {}
     for bm in sorted(binding_modes):
-        binding_modes[bm].sort(key=lambda x: profiles[x][-1], reverse=True)
-        m = profiles[binding_modes[bm][0]][0]
-        tfs = m.name.upper().split("(")[0].split("::")
-        filters.setdefault(bm, [m.matrix_id, tfs])
-        pwm = [list(i) for i in m.pwm.values()]
-        pwm = _PWM_to_filter_weights(list(map(list, zip(*pwm))), params["filter_size"])
-        filters[bm].append(pwm)
-        filters[bm].append(np.flip(pwm))
+        binding_modes[bm].sort(key=lambda x: info_contents[x], reverse=True)
+        for matrix_id in binding_modes[bm]:
+            m = profiles[matrix_id]
+            tfs = m.name.upper().split("(")[0].split("::")
+            filters.setdefault(bm, [])
+            filters[bm].append([m.matrix_id, tfs])
+            pwm = [list(i) for i in m.pwm.values()]
+            pwm = _PWM_to_filter_weights(list(map(list, zip(*pwm))), params["filter_size"])
+            filters[bm][-1].append(pwm)
+            filters[bm][-1].append(np.flip(pwm))
 
     # Save
     with open(params["out_file"], "wb") as handle:
