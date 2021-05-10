@@ -31,17 +31,16 @@ def main(**params):
 
     # Parse profiles
     profiles = {}
-    info_contents = {}
+    probs = {}
     ixs = {"A":0, "C":1, "G":2, "T":3}
     jaspar_file = os.path.join(data_dir,
         "JASPAR2020_CORE_vertebrates_non-redundant_pfms_jaspar.txt")
     with open(jaspar_file) as handle:
         for m in motifs.parse(handle, "jaspar"):
-            m.pseudocounts = motifs.jaspar.calculate_pseudocounts(m)
-            consensus_seq = str(m.consensus)
-            ic = sum([m.pssm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
             profiles.setdefault(m.matrix_id, m)
-            info_contents.setdefault(m.matrix_id, ic)
+            consensus_seq = str(m.consensus)
+            prob = sum([m.pwm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
+            probs.setdefault(m.matrix_id, prob)
 
     # Parse binding modes
     binding_modes = {}
@@ -58,7 +57,7 @@ def main(**params):
     # For each binding mode...
     filters = {}
     for bm in sorted(binding_modes):
-        binding_modes[bm].sort(key=lambda x: info_contents[x], reverse=True)
+        binding_modes[bm].sort(key=lambda x: probs[x], reverse=True)
         for matrix_id in binding_modes[bm]:
             m = profiles[matrix_id]
             tfs = m.name.upper().split("(")[0].split("::")

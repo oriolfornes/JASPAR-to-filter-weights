@@ -39,20 +39,8 @@ def main(**params):
     data_dir = os.path.join(base_dir, "data")
     prefix = os.path.splitext(os.path.basename(params["binding_modes_pickle"]))[0]
 
-    # Parse profiles
-    info_contents = {}
-    ixs = {"A":0, "C":1, "G":2, "T":3}
-    jaspar_file = os.path.join(data_dir,
-        "JASPAR2020_CORE_vertebrates_non-redundant_pfms_jaspar.txt")
-    with open(jaspar_file) as handle:
-        for m in motifs.parse(handle, "jaspar"):
-            m.pseudocounts = motifs.jaspar.calculate_pseudocounts(m)
-            consensus_seq = str(m.consensus)
-            ic = sum([m.pssm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
-            info_contents.setdefault(m.matrix_id, ic)
-
     # Load
-    info_contents = {}
+    probs = {}
     matrix_id2filter = {}
     ixs = {"A":0, "C":1, "G":2, "T":3}
     with open(params["binding_modes_pickle"], "rb") as handle:
@@ -80,14 +68,13 @@ def main(**params):
             lines += " ".join([str(round(r, 8)).rjust(11) for r in row]) + "\n"
         lines += "\n"
         matrix_id2filter.setdefault(name, filters[bm][0][2])
-        m.pseudocounts = motifs.jaspar.calculate_pseudocounts(m)
-        ic = sum([m.pssm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
-        info_contents.setdefault(name, ic)
+        prob = sum([m.pwm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
+        probs.setdefault(name, prob)
         m = "\n".join(["\t".join(list(map(str, i+.25))) for i in filters[bm][0][3]])
         handle = io.StringIO(m)
         m = motifs.read(handle, "pfm-four-columns")
         name = "%s;rev;%s" % (filters[bm][0][0], "::".join(filters[bm][0][1]))
-        consensus_seq = m.pssm.consensus
+        consensus_seq = m.consensus
         w = len(consensus_seq)
         lines += "MOTIF %s %s\n" % (name, consensus_seq)
         lines += "letter-probability matrix: alength= 4 w= %s nsites= 20 E= 0\n" % w
@@ -95,12 +82,8 @@ def main(**params):
             lines += " ".join([str(round(r, 8)).rjust(11) for r in row]) + "\n"
         lines += "\n"
         matrix_id2filter.setdefault(name, filters[bm][0][3])
-        m.pseudocounts = motifs.jaspar.calculate_pseudocounts(m)
-        ic = sum([m.pssm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
-        info_contents.setdefault(name, ic)
-
-    print(info_contents["MA0139.1;fwd;CTCF"])
-    exit(0)
+        prob = sum([m.pwm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
+        probs.setdefault(name, prob)
 
     with open(meme_file, "w") as handle:
         handle.write(lines)
@@ -113,15 +96,14 @@ def main(**params):
         _ = sp.run([cmd], shell=True)
 
     df = pd.read_csv(os.path.join(tomtom_dir, "tomtom.tsv"), sep="\t", header=0,
-        usecols=[0, 1, 4], comment="#")
-    df["log10_E-value"] = np.log10(df["E-value"])
-    df["log10_E-value"] = df["log10_E-value"].apply(lambda x: -100 if x < -100 else x)
+        usecols=[0, 1, 3], comment="#")
+    df["p-value"] = df["p-value"].apply(lambda x: 0 if x > 0.05 else 1)
     df.sort_values(by=["Query_ID", "Target_ID"], inplace=True)
 
     Xs = []
     ys = []
     for matrix_id in df["Query_ID"].unique():
-        log10s = df[df["Query_ID"] == matrix_id]["log10_E-value"].to_list()
+        log10s = df[df["Query_ID"] == matrix_id]["p-value"].to_list()
         Xs.append(log10s)
         ys.append(matrix_id)
     Xs = np.array(Xs)
@@ -136,7 +118,7 @@ def main(**params):
     # Subsampled filters
     sub_filters = {}
     for c in sorted(clusters):
-        clusters[c].sort(key=lambda x: info_contents[x], reverse=True)
+        clusters[c].sort(key=lambda x: probs[x], reverse=True)
         matrix_id = clusters[c][0]
         sub_filters.setdefault(matrix_id, matrix_id2filter[matrix_id])
 
