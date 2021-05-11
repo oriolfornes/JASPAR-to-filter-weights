@@ -31,16 +31,11 @@ def main(**params):
 
     # Parse profiles
     profiles = {}
-    probs = {}
-    ixs = {"A":0, "C":1, "G":2, "T":3}
     jaspar_file = os.path.join(data_dir,
         "JASPAR2020_CORE_vertebrates_non-redundant_pfms_jaspar.txt")
     with open(jaspar_file) as handle:
         for m in motifs.parse(handle, "jaspar"):
             profiles.setdefault(m.matrix_id, m)
-            consensus_seq = str(m.consensus)
-            prob = sum([m.pwm[ixs[consensus_seq[i]]][i] for i in range(len(consensus_seq))])
-            probs.setdefault(m.matrix_id, prob)
 
     # Parse binding modes
     binding_modes = {}
@@ -57,16 +52,12 @@ def main(**params):
     # For each binding mode...
     filters = {}
     for bm in sorted(binding_modes):
-        binding_modes[bm].sort(key=lambda x: probs[x], reverse=True)
         for matrix_id in binding_modes[bm]:
             m = profiles[matrix_id]
-            tfs = m.name.upper().split("(")[0].split("::")
             filters.setdefault(bm, [])
-            filters[bm].append([m.matrix_id, tfs])
             pwm = [list(i) for i in m.pwm.values()]
             pwm = _PWM_to_filter_weights(list(map(list, zip(*pwm))), params["filter_size"])
-            filters[bm][-1].append(pwm)
-            filters[bm][-1].append(np.flip(pwm))
+            filters[bm].append([matrix_id, pwm, np.flip(pwm)])
 
     # Save
     with open(params["out_file"], "wb") as handle:
