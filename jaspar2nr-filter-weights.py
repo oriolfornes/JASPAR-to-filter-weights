@@ -7,8 +7,6 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
-import random
-random.seed(0)
 import subprocess as sp
 
 CONTEXT_SETTINGS = {
@@ -56,35 +54,22 @@ def main(**args):
         for m in motifs.parse(handle, "jaspar"):
             profiles.setdefault(m.matrix_id, m)
 
-    # Parse binding modes
-    binding_modes = {}
-    binding_modes_file = os.path.join(data_dir, "leaf_to_cluster.tab")
-    with open(binding_modes_file) as handle:
-        for line in handle:
-            matrix_id, cluster = line.strip("\n").split("\t")
-            matrix_id = matrix_id.split("_")
-            binding_modes.setdefault(int(cluster), [])
-            matrix_id = "%s.%s" % (matrix_id[-2], matrix_id[-1])
-            if matrix_id in profiles:
-                binding_modes[int(cluster)].append(matrix_id)
-
     # For each binding mode...
     filters = {}
     filters_pfms = {}
-    for bm in sorted(binding_modes):
-        for matrix_id in binding_modes[bm]:
-            m = profiles[matrix_id]
-            tfs = m.name.upper().split("(")[0].split("::")
-            pwm = _PWM_to_filter_weights(m, args["weights"],
-                args["filter_size"])
-            filters.setdefault("%s;fwd;%s" % (matrix_id, "::".join(tfs)), pwm)
-            filters.setdefault("%s;rev;%s" % (matrix_id, "::".join(tfs)),
-                pwm[::-1,::-1])
-            pfm = _PWM_to_filter_weights(m, filter_size=args["filter_size"])
-            filters_pfms.setdefault("%s;fwd;%s" % (matrix_id, "::".join(tfs)),
-                pfm)
-            filters_pfms.setdefault("%s;rev;%s" % (matrix_id, "::".join(tfs)),
-                pfm[::-1,::-1])
+    for matrix_id in profiles:
+        m = profiles[matrix_id]
+        tfs = m.name.upper().split("(")[0].split("::")
+        pwm = _PWM_to_filter_weights(m, args["weights"],
+            args["filter_size"])
+        filters.setdefault("%s;fwd;%s" % (matrix_id, "::".join(tfs)), pwm)
+        filters.setdefault("%s;rev;%s" % (matrix_id, "::".join(tfs)),
+            pwm[::-1,::-1])
+        pfm = _PWM_to_filter_weights(m, filter_size=args["filter_size"])
+        filters_pfms.setdefault("%s;fwd;%s" % (matrix_id, "::".join(tfs)),
+            pfm)
+        filters_pfms.setdefault("%s;rev;%s" % (matrix_id, "::".join(tfs)),
+            pfm[::-1,::-1])
 
     # MEME
     meme_file = os.path.join(base_dir,
@@ -125,27 +110,13 @@ def main(**args):
         _ = sp.run([cmd], shell=True)
 
     # Non-redundant filters
-    ixs = {}
-    tomtom = []
     nr_filters = {}
-    df = pd.read_csv(tomtom_file, sep="\t", header=0, usecols=[0, 1, 5],
+    tomtom = pd.read_csv(tomtom_file, sep="\t", header=0, usecols=[0, 1, 5],
         comment="#")
-    df.sort_values(by=["Query_ID", "Target_ID"], inplace=True)
-    matrix_ids = list(df["Query_ID"].unique())
-    for ix, matrix_id in enumerate(matrix_ids):
-        ixs.setdefault(matrix_id, ix)
-        tomtom.append(df[df["Query_ID"] == matrix_id]["q-value"].to_list())
-    random.shuffle(matrix_ids)
-    while len(nr_filters) < args["n_filters"] and len(matrix_ids) > 0:
-        matrix_id = matrix_ids.pop(0)
-        is_nr = True
-        for nr_matrix_id in nr_filters:
-            if tomtom[ixs[nr_matrix_id]][ixs[matrix_id]] <= 0.05:
-                is_nr = False
-                break
-        if is_nr:
-            nr_filters.setdefault(matrix_id, filters[matrix_id])
-
+    tomtom.sort_values(by=["Query_ID", "Target_ID"], inplace=True)
+    while len(nr_filters) < args["n_filters"]:
+        nr_filter = _get_nr_filter(tomtom, set(list(nr_filters.keys())))
+        nr_filters.setdefault(nr_filter, filters[nr_filter])
     # Save
     with open(args["out_file"], "wb") as handle:
         pickle.dump(nr_filters, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -187,6 +158,22 @@ def _PWM_to_filter_weights(motif, weights="PFM", filter_size=19):
                 lpop += 1
 
     return(np.array(pwm))
+
+def _get_nr_filter(tomtom, nr_filters):
+
+    # First filter...
+    if len(nr_filters) == 0:
+        df = tomtom.groupby(["Query_ID"]).sum().\
+                    sort_values(by=["q-value"], ascending=False)
+        return(df.index[0])
+    # ... Other filters...
+    else:
+        df = tomtom[tomtom["Target_ID"].isin(list(nr_filters))].\
+                                        groupby(["Query_ID"]).sum().\
+                                        sort_values(by=["q-value"], ascending=False)
+        for matrix_id in df.index:
+            if matrix_id not in nr_filters:
+                return(matrix_id)
 
 if __name__ == "__main__":
     main()
