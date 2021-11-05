@@ -8,6 +8,8 @@ import os
 import pandas as pd
 import pickle
 import subprocess as sp
+from tqdm import tqdm
+bar_format = "{percentage:3.0f}%|{bar:20}{r_bar}"
 
 CONTEXT_SETTINGS = {
     "help_option_names": ["-h", "--help"],
@@ -27,10 +29,8 @@ CONTEXT_SETTINGS = {
 )
 @click.option(
     "-n", "--n-filters",
-    help="Number of filters to subsample.",
+    help="Number of filters to subsample.  [default: max]",
     type=int,
-    default=100,
-    show_default=True,
 )
 @click.option(
     "-w", "--weights",
@@ -114,7 +114,11 @@ def main(**args):
     tomtom = pd.read_csv(tomtom_file, sep="\t", header=0, usecols=[0, 1, 5],
         comment="#")
     tomtom.sort_values(by=["Query_ID", "Target_ID"], inplace=True)
-    while len(nr_filters) < args["n_filters"]:
+    if args["n_filters"] is None:
+        n_filters = len(filters)
+    else:
+        n_filters = args["n_filters"]
+    for i in tqdm(range(n_filters), total=n_filters, bar_format=bar_format):
         nr_filter = _get_nr_filter(tomtom, set(list(nr_filters.keys())))
         nr_filters.setdefault(nr_filter, filters[nr_filter])
     # Save
