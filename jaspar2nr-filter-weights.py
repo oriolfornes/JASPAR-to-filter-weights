@@ -21,6 +21,11 @@ CONTEXT_SETTINGS = {
     type=click.Path(resolve_path=True),
 )
 @click.option(
+    "-e", "--exclude-tf",
+    help="Do not include motifs from given TF.",
+    multiple=True,
+)
+@click.option(
     "-f", "--filter-size",
     help="Filter size.",
     type=int,
@@ -43,6 +48,8 @@ CONTEXT_SETTINGS = {
 def main(**args):
 
     # Initialize
+    excluded_motifs = set()
+    exclude_tfs = set(args["exclude_tf"])
     base_dir = os.path.dirname(os.path.realpath(__file__))
     data_dir = os.path.join(base_dir, "data")
 
@@ -60,6 +67,10 @@ def main(**args):
     for matrix_id in profiles:
         m = profiles[matrix_id]
         tfs = m.name.upper().split("(")[0].split("::")
+        # Exclude TF
+        if exclude_tfs.intersection(set(tfs)):
+            excluded_motifs.add(matrix_id)
+            continue
         pwm = _PWM_to_filter_weights(m, args["weights"],
             args["filter_size"])
         filters.setdefault("%s;fwd;%s" % (matrix_id, "::".join(tfs)), pwm)
@@ -119,7 +130,8 @@ def main(**args):
     else:
         n_filters = args["n_filters"]
     for i in tqdm(range(n_filters), total=n_filters, bar_format=bar_format):
-        nr_filter = _get_nr_filter(tomtom, set(list(nr_filters.keys())))
+        nr_filter = _get_nr_filter(tomtom, set(list(nr_filters.keys())),
+            excluded_motifs)
         nr_filters.setdefault(nr_filter, filters[nr_filter])
     # Save
     with open(args["out_file"], "wb") as handle:
@@ -163,19 +175,28 @@ def _PWM_to_filter_weights(motif, weights="PFM", filter_size=19):
 
     return(np.array(pwm))
 
-def _get_nr_filter(tomtom, nr_filters):
+def _get_nr_filter(tomtom, nr_filters, excluded_motifs):
 
     # First filter...
     if len(nr_filters) == 0:
         df = tomtom.groupby(["Query_ID"]).sum().\
                     sort_values(by=["q-value"], ascending=False)
-        return(df.index[0])
+        for matrix_id in df.index:
+            # Exclude TF
+            l = matrix_id.split(";")
+            if l[0] in excluded_motifs:
+                continue
+            return(matrix_id)
     # ... Other filters...
     else:
         df = tomtom[tomtom["Target_ID"].isin(list(nr_filters))].\
                                         groupby(["Query_ID"]).sum().\
                                         sort_values(by=["q-value"], ascending=False)
         for matrix_id in df.index:
+            # Exclude TF
+            l = matrix_id.split(";")
+            if l[0] in excluded_motifs:
+                continue
             if matrix_id not in nr_filters:
                 return(matrix_id)
 
